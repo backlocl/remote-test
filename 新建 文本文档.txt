@@ -1,0 +1,158 @@
+public class DynamicExcelUtil {
+
+
+
+    /**
+     * 反射获取数据中指定字段的值
+     * @param clazz
+     * @param obj
+     * @param fieldName
+     * @return
+     */
+    public static Object getMethodVal(Class<?> clazz, Object obj, String fieldName) {
+        try {
+            String firstLetter = fieldName.substring(0, 1).toUpperCase();
+            String getter = "get" + firstLetter + fieldName.substring(1);
+            Method getMethod = clazz.getMethod(getter);
+            return getMethod.invoke(obj);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    /**
+     * 创建表头
+     * @param workbook
+     * @param headList
+     */
+    public static void createExcelHead(SXSSFWorkbook workbook, Map<String, String> headList, String excelName) {
+        //设置表头样式
+        CellStyle style = workbook.createCellStyle();
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(VerticalAlignment.CENTER);
+        style.setFillForegroundColor(IndexedColors.GREY_50_PERCENT.getIndex());
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        Font headerFont = workbook.createFont();
+        headerFont.setFontName("Arial");
+        headerFont.setFontHeightInPoints((short) 10);
+        headerFont.setBold(true);
+        headerFont.setColor(IndexedColors.WHITE.getIndex());
+        style.setFont(headerFont);
+        Sheet sheet = workbook.createSheet(excelName);
+        Row headRow = sheet.createRow(0);
+        int cellNum = 0;
+
+        for (Map.Entry<String, String> head : headList.entrySet()) {
+            Cell cell = headRow.createCell(cellNum);
+            cell.setCellStyle(style);
+            cell.setCellValue(head.getValue());
+            cellNum++;
+        }
+    }
+
+    /**
+     * 填充数据
+     * @param workbook
+     * @param headList
+     * @param dataList
+     * @param <T>
+     */
+    public static <T> void appendExcel(SXSSFWorkbook workbook, Map<String, String> headList, List<T> dataList) {
+        Sheet sheet = workbook.getSheetAt(0);
+        //设置表格样式
+        CellStyle style = workbook.createCellStyle();
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(VerticalAlignment.CENTER);
+        style.setBorderRight(BorderStyle.THIN);
+        style.setRightBorderColor(IndexedColors.GREY_50_PERCENT.getIndex());
+        style.setBorderLeft(BorderStyle.THIN);
+        style.setLeftBorderColor(IndexedColors.GREY_50_PERCENT.getIndex());
+        style.setBorderTop(BorderStyle.THIN);
+        style.setTopBorderColor(IndexedColors.GREY_50_PERCENT.getIndex());
+        style.setBorderBottom(BorderStyle.THIN);
+        style.setBottomBorderColor(IndexedColors.GREY_50_PERCENT.getIndex());
+        Font dataFont = workbook.createFont();
+        dataFont.setFontName("Arial");
+        dataFont.setFontHeightInPoints((short) 10);
+        style.setFont(dataFont);
+
+        int lastRowNum = sheet.getLastRowNum() + 1;
+        for (T t : dataList) {
+            Row row = sheet.createRow(lastRowNum);
+            int cellNum = 0;
+            for (Map.Entry<String, String> head : headList.entrySet()) {
+                Cell cell = row.createCell(cellNum);
+                cell.setCellStyle(style);
+                Object methodVal =getMethodVal(t.getClass(), t, head.getKey());
+                if (methodVal == null) {
+                    methodVal = "";
+                }
+                if (methodVal instanceof Integer) {
+                    cell.setCellValue((Integer) methodVal);
+                } else if (methodVal instanceof Date) {
+                    String dateToStr = DateUtil.formatDateTime((Date) methodVal);
+                    cell.setCellValue(dateToStr);
+                } else {
+                    cell.setCellValue(methodVal.toString());
+                }
+                cellNum++;
+            }
+            lastRowNum++;
+        }
+    }
+
+    /**
+     * 生成excel
+     * @param excelName
+     * @param headList
+     * @param dataList
+     * @param response
+     * @param <T>
+     */
+    public static <T> void createExcelNoPath(String excelName, Map<String, String> headList, List<T> dataList, HttpServletResponse response) {
+        ByteArrayOutputStream baos = null;
+        try {
+            //超过1000行将刷新到磁盘
+            SXSSFWorkbook wb = new SXSSFWorkbook(1000);
+            //创建表格头
+            createExcelHead(wb, headList, excelName);
+            //填充数据
+            appendExcel(wb, headList, dataList);
+            baos = new ByteArrayOutputStream();
+            wb.write(baos);
+            baos.close();
+            String fileName = excelName + "-" + DateUtil.format(new Date(),"yyyy-MM-dd") + ".xlsx";
+
+            String filepath = "D:\\" + fileName;
+            File file = new File(filepath);
+            if (file.exists()) {
+                file.delete();
+            }
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(baos.toByteArray(), 0, baos.toByteArray().length);
+            fos.flush();
+            fos.close();
+
+            response.setContentType("application/vnd.ms-excel");
+            response.addHeader("Content-Disposition", "attachment;filename=" +
+                    new String(fileName.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1));
+            response.getOutputStream().write(baos.toByteArray());
+            response.getOutputStream().flush();
+            response.getOutputStream().close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (baos != null) {
+                try {
+                    baos.close();
+                    response.getOutputStream().flush();
+                    response.getOutputStream().close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        }
+    }
